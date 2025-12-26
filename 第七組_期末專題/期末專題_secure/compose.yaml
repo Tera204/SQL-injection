@@ -1,0 +1,25 @@
+services:
+  # 1. 資料庫服務 (Database)
+  db:
+    image: mysql:8.0
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: class_db
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d # 把寫的 SQL 載入進去
+  
+  # 2. 網頁伺服器 (Web Server)
+  web:
+    build: .
+    ports:
+      - "8081:80" # 把你的 8080 port 對應到容器的 80 port
+    environment: #傳遞資料庫連線資訊給 PHP
+      DB_HOST: db
+      DB_NAME: class_db
+      DB_USER: root
+      DB_PASS: root
+    depends_on:
+      - db
+    volumes:
+      - ./web/src:/var/www/html/

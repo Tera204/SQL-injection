@@ -1,0 +1,4 @@
+# 設定當使用者只輸入網址localhost:8080時，預設開啟的檔案
+# (原本Apache 伺服器的是預設是index.php，現在改成student_login.php)
+
+DirectoryIndex student_login.php
